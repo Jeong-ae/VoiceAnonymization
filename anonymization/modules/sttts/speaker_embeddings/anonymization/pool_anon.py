@@ -11,8 +11,8 @@ from sklearn.preprocessing import minmax_scale, StandardScaler
 
 from .base_anon import BaseAnonymizer
 from ..utils import PLDAModel
-from ..speaker_extraction import SpeakerExtraction
-from ..speaker_embeddings import SpeakerEmbeddings
+from ..speaker_extractions import SpeakerExtraction
+from ..speaker_embedding import SpeakerEmbeddings
 from utils import setup_logger
 
 logger = setup_logger(__name__)

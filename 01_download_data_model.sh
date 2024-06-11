@@ -4,8 +4,10 @@ set -e
 
 source env.sh
 
-# librispeech_corpus=PATH_TO_Librispeech
-# iemocap_corpus=PATH_TO_IEMOCAP
+librispeech_corpus='/nfs_shared_/laj/corpora/LibriSpeech'
+iemocap_corpus='/nfs_shared_/laj/IEMOCAP_full_release'
+password="getdata"
+
 
 for data_set in libri_dev libri_test; do
     dir=data/$data_set

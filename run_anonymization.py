@@ -3,8 +3,8 @@ from argparse import ArgumentParser
 import os
 parser = ArgumentParser()
 
-parser.add_argument('--config', default='anon_config.yaml')
-parser.add_argument('--gpu_ids', default='0')
+parser.add_argument('--config', default='configs/anon_new.yaml')
+parser.add_argument('--gpu_ids', default='0,1')
 parser.add_argument('--force_compute', default=False, type=bool)
 args = parser.parse_args()
 
@@ -49,6 +49,8 @@ if __name__ == '__main__':
         check_dependencies('anonymization/pipelines/sttts/requirements.txt')
         if "download_precomputed_intermediate_repr" in config and config["download_precomputed_intermediate_repr"]:
             shell_run('anonymization/pipelines/sttts/download_precomputed_intermediate_repr.sh')
+        from anonymization.pipelines.sttts import STTTSPipeline as pipeline
+    elif config['pipeline'] == "new":
         from anonymization.pipelines.sttts import STTTSPipeline as pipeline
     elif config['pipeline'] == "nac":
         shell_run('anonymization/pipelines/nac/install.sh')

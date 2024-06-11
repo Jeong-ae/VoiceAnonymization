@@ -1,7 +1,7 @@
 from .anonymization.random_anon import RandomAnonymizer
 from .anonymization.pool_anon import PoolAnonymizer
 from .anonymization.gan_anon import GANAnonymizer
-from .speaker_embeddings import SpeakerEmbeddings
+from .speaker_embedding import SpeakerEmbeddings
 from utils import setup_logger
 
 logger = setup_logger(__name__)

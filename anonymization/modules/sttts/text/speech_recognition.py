@@ -7,8 +7,14 @@ import numpy as np
 from pathlib import Path
 
 from .text import Text
-from .recognition.ims_asr import ImsASR
 from utils import read_kaldi_format, setup_logger
+import whisper
+import soundfile
+import librosa
+from ..vits.text import text_to_sequence
+from ..vits import utils as vit_utils
+from ..vits import commons as vit_commons
+import torch
 
 set_start_method('spawn', force=True)
 logger = setup_logger(__name__)
@@ -19,7 +25,7 @@ class SpeechRecognition:
         self.devices = devices
         self.save_intermediate = save_intermediate
         self.force_compute = force_compute if force_compute else settings.get('force_compute_recognition', False)
-        self.n_processes = len(self.devices)
+        self.n_processes = 1 #len(self.devices)
 
         self.model_hparams = settings
 
@@ -34,7 +40,7 @@ class SpeechRecognition:
                 raise ValueError('Results dir must be specified in parameters or settings!')
 
         self.asr_models = [create_model_instance(hparams=self.model_hparams, device=device) for device, process in zip(cycle(devices), range(len(devices)))]
-        self.is_phones = (self.asr_models[0].output == 'phones')
+        self.is_phones = True
 
     def recognize_speech(self, dataset_path, dataset_name=None, utterance_list=None):
         dataset_name = dataset_name if dataset_name else dataset_path.name
@@ -114,11 +120,31 @@ class SpeechRecognition:
 
 def create_model_instance(hparams, device):
     recognizer = hparams.get('recognizer')
-    if recognizer == 'ims':
-        return ImsASR(**hparams, device=device)
+    if recognizer == 'whisper':
+        model = whisper.load_model('small.en')
+        return model
     else:
         raise ValueError(f'Invalid recognizer option: {recognizer}')
 
+def recognize_speech_of_audio(model, audio_file):
+    if len(audio_file)==6:
+        audio, sr = soundfile.read(audio_file[4])
+    else:
+        audio, sr = soundfile.read(audio_file)
+
+    if sr != 16000:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+    audio = audio.astype('float32')
+    if audio.ndim > 1:
+        audio = audio.mean(axis=0) 
+    result = model.transcribe(audio)
+    text = result['text']
+    # text_norm = text_to_sequence(text, hps.data.text_cleaners)
+    # if self.hps.data.add_blank:
+    #     text_norm = vit_commons.intersperse(text_norm, 0)
+    # text_norm = torch.LongTensor(text_norm)
+    return text
+    
 
 def recognition_job(data):
     utterances, asr_model, out_dir, sleep, device, model_hparams, job_id, save_intermediate = data
@@ -126,11 +152,12 @@ def recognition_job(data):
 
     add_suffix = f'_{job_id}' if job_id is not None else None
     job_id = job_id or 0
+    # hps = vit_utils.get_hparams_from_file("/user/ljs_base.json")
 
-    texts = Text(is_phones=(asr_model.output == 'phones'))
+    texts = Text(True) #True
     i = 0
     for utt, spk, wav_path in tqdm(utterances, desc=f'Job {job_id}', leave=True):
-        sentence = asr_model.recognize_speech_of_audio(audio_file=wav_path)
+        sentence = recognize_speech_of_audio(asr_model, audio_file=wav_path) #한문장
         texts.add_instance(sentence=sentence, utterance=utt, speaker=spk)
 
         i += 1
@@ -141,3 +168,5 @@ def recognition_job(data):
         texts.save_text(out_dir=out_dir, add_suffix=add_suffix)
 
     return texts
+
+

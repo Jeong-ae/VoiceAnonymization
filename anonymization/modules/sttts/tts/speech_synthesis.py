@@ -4,8 +4,14 @@ import time
 from torch.multiprocessing import Pool, set_start_method
 from itertools import repeat
 
-from .ims_tts import ImsTTS
 from utils import create_clean_dir, setup_logger
+from ..vits import utils as vit_utils
+from ..vits.models import SynthesizerTrn
+from ..vits.text.symbols import symbols
+from ..vits.text import text_to_sequence
+from ..vits import commons as vit_commons
+import torch
+import os
 
 set_start_method('spawn', force=True)
 logger = setup_logger(__name__)
@@ -14,21 +20,26 @@ class SpeechSynthesis:
 
     def __init__(self, devices, settings, model_dir=None, results_dir=None, save_output=True, force_compute=False):
         self.devices = devices
+
+
         self.output_sr = settings.get('output_sr', 16000)
         self.save_output = save_output
-        self.force_compute = force_compute if force_compute else settings.get('force_compute_synthesis', False)
+        self.force_compute = False
+        self.hps = vit_utils.get_hparams_from_file("/user/ljs_base.json")
+        # self.sr = 16000
 
         synthesizer_type = settings.get('synthesizer', 'ims')
-        if synthesizer_type == 'ims':
-            hifigan_path = settings['hifigan_path']
-            fastspeech_path = settings['fastspeech_path']
-            embedding_path = settings.get('embeddings_path', None)
-
+        if synthesizer_type == 'vit':
             self.tts_models = []
+
             for device in self.devices:
-                self.tts_models.append(ImsTTS(hifigan_path=hifigan_path, fastspeech_path=fastspeech_path,
-                                              embedding_path=embedding_path, device=device,
-                                              output_sr=self.output_sr, lang=settings.get('lang', 'en')))
+                net_g = SynthesizerTrn(len(symbols),
+                            self.hps.data.filter_length // 2 + 1,
+                            self.hps.train.segment_size // self.hps.data.hop_length,
+                                **self.hps.model)
+                _ = vit_utils.load_checkpoint("/user/pretrained_ljs.pth", net_g, None)
+                net_g.eval()  
+                self.tts_models.append(net_g)
 
         if results_dir:
             self.results_dir = results_dir
@@ -40,7 +51,7 @@ class SpeechSynthesis:
             if self.save_output:
                 raise ValueError('Results dir must be specified in parameters or settings!')
 
-    def synthesize_speech(self, dataset_name, texts, speaker_embeddings, prosody=None, emb_level='spk'):
+    def synthesize_speech(self, dataset_name, texts, speaker_embeddings, prosody=None, emb_level='utt'):
         # depending on whether we save the generated audios to disk or not, we either return a dict of paths to the
         # saved wavs (wav.scp) or the wavs themselves
         dataset_results_dir = self.results_dir / dataset_name if self.save_output else ''
@@ -59,8 +70,13 @@ class SpeechSynthesis:
                 else:
                     wavs = {}
                     for utt, wav_file in already_synthesized_utts.items():
-                        wav, _ = soundfile.read(wav_file)
+                        if len(wav_file)==6:
+                            wav, sr = soundfile.read(wav_file[4])
+                        else:
+                            wav, sr = soundfile.read(wav_file)
+                        # wav, sr = soundfile.read(wav_file)
                         wavs[utt] = wav
+                        self.sr = sr
 
         if texts:
             logger.info(f'Synthesize {len(texts)} utterances...')
@@ -104,12 +120,9 @@ class SpeechSynthesis:
                                 speaker_embedding = speaker_embeddings.get_embedding_for_identifier(speaker)
                             else:
                                 speaker_embedding = speaker_embeddings.get_embedding_for_identifier(utt)
+                                speaker_embedding = speaker_embedding.detach()
 
-                            if prosody:
-                                utt_prosody_dict = prosody.get_instance(utt)
-                            else:
-                                utt_prosody_dict = {}
-                            job_instances.append((text, utt, speaker_embedding, utt_prosody_dict))
+                            job_instances.append((text, utt, speaker_embedding))
                         except KeyError:
                             logger.warn(f'Key error at {utt}')
                             continue
@@ -117,29 +130,43 @@ class SpeechSynthesis:
 
                 # multiprocessing
                 with Pool(processes=num_processes) as pool:
-                    job_params = zip(instances, self.tts_models, repeat(dataset_results_dir), sleeps,
-                                     repeat(text_is_phones), repeat(self.save_output))
-                    new_wavs = pool.starmap(tqdm(synthesis_job), job_params)
+                    job_params = zip(instances, range(len(self.tts_models)), self.devices, repeat(dataset_results_dir), sleeps,
+                        repeat(text_is_phones), repeat(self.save_output), repeat(self.hps))
+                    new_wavs = tqdm(pool.starmap(synthesis_job, job_params))
 
                 for new_wav_dict in new_wavs:
                     wavs.update(new_wav_dict)
         return wavs
 
+def get_text(text, hps):
+    text_norm = text_to_sequence(text, hps.data.text_cleaners)
+    if hps.data.add_blank:
+        text_norm = vit_commons.intersperse(text_norm, 0)
+    text_norm = torch.LongTensor(text_norm)
+    return text_norm
 
-def synthesis_job(instances, tts_model, out_dir, sleep, text_is_phones=False, save_output=False):
-    time.sleep(sleep)
+def synthesis_job(instances, model_index, device, out_dir, sleep, text_is_phones=False, save_output=False, hps = None):
+    net_g = SynthesizerTrn(len(symbols),
+                            hps.data.filter_length // 2 + 1,
+                            hps.train.segment_size // hps.data.hop_length,
+                                **hps.model)
+    _ = vit_utils.load_checkpoint("/user/pretrained_ljs.pth", net_g, None)
+    net_g = net_g.to(device)
+    _ = net_g.eval()  
 
     wavs = {}
-    for text, utt, speaker_embedding, utt_prosody_dict in tqdm(instances):
-        wav = tts_model.read_text(text=text, speaker_embedding=speaker_embedding, text_is_phones=text_is_phones,
-                                  **utt_prosody_dict)
-
+    for text, utt, speaker_embedding in tqdm(instances):
+        
+        stn_tst = get_text(text, hps)
+        x_tst = stn_tst.to(device).unsqueeze(0)
+        x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(device)
+        speaker_embedding[torch.isnan(speaker_embedding)] = 0
+        wav = net_g.infer(device, x_tst, x_tst_lengths, speaker_embedding, noise_scale=.667, noise_scale_w=0.8, length_scale=1)[0][0,0].data.cpu().float().numpy()
+   
         if save_output:
             out_file = str((out_dir / f'{utt}.wav').absolute())
-            soundfile.write(file=out_file, data=wav, samplerate=tts_model.output_sr)
+            soundfile.write(file=out_file, data=wav, samplerate=16000)
             wavs[utt] = out_file
         else:
             wavs[utt] = wav
     return wavs
-
-

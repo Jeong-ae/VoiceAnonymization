@@ -7,7 +7,7 @@ from tqdm import tqdm
 from typing import Union
 
 from .base_anon import BaseAnonymizer
-from ..speaker_embeddings import SpeakerEmbeddings
+from ..speaker_embedding import SpeakerEmbeddings
 from .utils.WGAN import EmbeddingsGenerator
 from utils import setup_logger
 
