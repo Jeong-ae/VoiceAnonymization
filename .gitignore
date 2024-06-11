@@ -151,3 +151,5 @@ anonymization/modules/nac/coqui_tts/
 .install-hash*
 *.json
 *.pth
+anonymization/modules/sttts/vits/
+
