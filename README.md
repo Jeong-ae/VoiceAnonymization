@@ -1,4 +1,4 @@
-# MY FINAL VERSION for VoicePrivacy Challenge 2024
+# MY FINAL VERSION for VoicePrivacy Challenge 2024
 ## STT + f0 features + TTS
 
 Please visit the [challenge website](https://www.voiceprivacychallenge.org/) for more information about the Challenge.
