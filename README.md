@@ -2,7 +2,9 @@
 ## VoicePrivacy 2024 Challenge 
 
 This repository containes code for our paper:
-_Voice Anonymization Using Emotion-Enriched Feature Integration with STT and TTS Models. In Proc. SPSC 2024__
+
+
+_Voice Anonymization Using Emotion-Enriched Feature Integration with STT and TTS Models. In Proc. SPSC 2024_
 
 Lee, Jeongae, Taeje Park, and Yeawon You
 
