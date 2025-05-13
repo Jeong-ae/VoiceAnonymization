@@ -8,7 +8,7 @@ _Voice Anonymization Using Emotion-Enriched Feature Integration with STT and TTS
 
 Lee, Jeongae, Taeje Park, and Yeawon You
 
-Link: [link](https://youtu.be/-FNgxCyXb5g?si=JRTNYCWsotFRvIqw
+Link: [presentation link](https://youtu.be/-FNgxCyXb5g?si=JRTNYCWsotFRvIqw)
 
 Please visit the [challenge website](https://www.voiceprivacychallenge.org/) for more information about the Challenge.
 
